@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>LMS</title>
+<style>
+body { font-family: Arial; margin:20px; }
+section { display:none; border:1px solid #ccc; padding:15px; margin-bottom:15px; }
+input, select, button { margin:5px; }
+#toast { position:fixed; bottom:20px; right:20px; background:#333; color:#fff; padding:10px; display:none; }
+</style>
+</head>
+
+<body>
+
+<section id="loginSection" style="display:block">
+<h2>Login</h2>
+<input id="username" placeholder="Username">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+</section>
+
+<section id="dashboard">
+<h3 id="roleInfo"></h3>
+<button onclick="logout()">Logout</button><br><br>
+
+<select onchange="showOp(this.value)">
+<option value="">Select Operation</option>
+<option value="view">View Books</option>
+<option value="add">Add Book</option>
+<option value="update">Update Book</option>
+<option value="delete">Delete / Undo</option>
+<option value="logs">Audit Logs</option>
+</select>
+</section>
+
+<section id="view">
+<button onclick="loadBooks()">Load Books</button>
+<ul id="books"></ul>
+</section>
+
+<section id="add">
+<input id="title" placeholder="Title">
+<input id="author" placeholder="Author">
+<button onclick="addBook()">Add Book</button>
+</section>
+
+<section id="update">
+<input id="bookId" placeholder="Book ID">
+<input id="newTitle" placeholder="New Title">
+<input id="newAuthor" placeholder="New Author">
+<button onclick="updateBook()">Update Book</button>
+</section>
+
+<section id="delete">
+<input id="deleteBookId" placeholder="Book ID">
+<button onclick="deleteBook()">Delete</button>
+<button onclick="undoDelete()">Undo Delete</button>
+</section>
+
+<section id="logs">
+<button onclick="loadLogs()">Load Logs</button>
+<ul id="auditLogs"></ul>
+</section>
+
+<div id="toast"></div>
+
+<script>
+let auth=null;
+
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.innerText=msg;
+  t.style.display="block";
+  setTimeout(()=>t.style.display="none",3000);
+}
+
+function hideAll(){
+  document.querySelectorAll("section").forEach(s=>s.style.display="none");
+}
+
+function showOp(id){
+  hideAll();
+  dashboard.style.display="block";
+  if(id) document.getElementById(id).style.display="block";
+}
+
+async function api(url,method,body){
+  const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){ toast(d.detail); return null; }
+  return d;
+}
+
+async function login(){
+  auth={username:username.value,password:password.value};
+  const d=await api("http://127.0.0.1:8000/login","POST",auth);
+  if(!d) return;
+  hideAll();
+  dashboard.style.display="block";
+  roleInfo.innerText=`Logged in as ${d.role}`;
+  toast("Login successful");
+}
+
+async function logout(){
+  await api("http://127.0.0.1:8000/logout","POST",auth);
+  auth=null;
+  hideAll();
+  loginSection.style.display="block";
+  toast("Logged out");
+}
+
+async function loadBooks(){
+  const d=await api("http://127.0.0.1:8000/books","POST",auth);
+  if(!d) return;
+  books.innerHTML="";
+  if(d.books.length===0){ toast("No books available"); return; }
+  d.books.forEach(b=>{
+    books.innerHTML+=`<li>${b.id} | ${b.title} | ${b.author}</li>`;
+  });
+}
+
+async function addBook(){
+  if(!title.value||!author.value){
+    toast("Please fill all fields");
+    return;
+  }
+
+  const d=await api("http://127.0.0.1:8000/books/add","POST",
+    {...auth,title:title.value,author:author.value}
+  );
+
+  if(d){
+    toast("Book added successfully");
+    title.value="";     // ✅ CLEARED
+    author.value="";    // ✅ CLEARED
+  }
+}
+
+async function updateBook(){
+  const d=await api(`http://127.0.0.1:8000/books/${bookId.value}`,"PUT",
+    {...auth,title:newTitle.value,author:newAuthor.value}
+  );
+  if(d) toast(d.message);
+}
+
+async function deleteBook(){
+  const d=await api(`http://127.0.0.1:8000/books/${deleteBookId.value}`,"DELETE",auth);
+  if(d) toast(d.message+" (Undo available)");
+}
+
+async function undoDelete(){
+  const d=await api(`http://127.0.0.1:8000/books/undo/${deleteBookId.value}`,"POST",auth);
+  if(d) toast(d.message);
+}
+
+async function loadLogs(){
+  const d=await api("http://127.0.0.1:8000/audit-logs","POST",auth);
+  if(!d) return;
+  auditLogs.innerHTML="";
+  d.logs.forEach(l=>{
+    auditLogs.innerHTML+=`<li>${l.timestamp} | ${l.user} | ${l.action} | ${l.details}</li>`;
+  });
+}
+</script>
+
+</body>
+</html>
